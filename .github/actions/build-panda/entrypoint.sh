@@ -32,8 +32,15 @@ APPIMAGE_ENABLED=false
 APPIMAGE_RUNTIME_FILE=""
 
 function cleanup {
+   local status=$?
    echo "::endgroup::"
-   make distclean
+   if test -f "${BUILD_DIR}/CMakeCache.txt"; then
+      echo "::group::Clean PandA build"
+      cmake --build "${BUILD_DIR}" --target clean
+      echo "::endgroup::"
+   fi
+   trap - EXIT
+   exit ${status}
 }
 trap cleanup EXIT
 
