@@ -1038,7 +1038,9 @@ void VHDL_writer::write_io_signal_post_fix(const structural_objectRef& port, con
          signal_string = "std_logic_vector(" + signal_string + ")";
       }
       else if(left->get_typeRef()->type == structural_type_descriptor::BOOL and
-              right->get_typeRef()->type == structural_type_descriptor::VECTOR_BOOL)
+              (right->get_typeRef()->type == structural_type_descriptor::VECTOR_BOOL ||
+               right->get_typeRef()->type == structural_type_descriptor::UINT ||
+               right->get_typeRef()->type == structural_type_descriptor::INT))
       {
          signal_string = "" + signal_string + "(0)";
       }
