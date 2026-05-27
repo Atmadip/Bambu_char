@@ -90,129 +90,129 @@ const unsigned int fu_binding::UNKNOWN = std::numeric_limits<unsigned int>::max(
 
 namespace
 {
-
-struct dataflow_memory_port_info
-{
-   unsigned int var;
-   std::string kind;
-   std::string index;
-};
-
-bool parse_dataflow_memory_port(const structural_objectRef& port, dataflow_memory_port_info& info)
-{
-   const std::regex dataflow_memory_port_re("^(?:p)?_DF_bambu_[0-9]+_([0-9]+)FO[0-9]+_(q|address|ce)([0-9]*)$");
-   std::smatch match;
-   const auto port_name = GetPointerS<const port_o>(port)->get_id();
-   if(!std::regex_match(port_name, match, dataflow_memory_port_re))
+   struct dataflow_memory_port_info
    {
-      return false;
-   }
-   info.var = static_cast<unsigned int>(std::stoul(match[1].str()));
-   info.kind = match[2].str();
-   info.index = match[3].str();
-   return true;
-}
+      unsigned int var;
+      std::string kind;
+      std::string index;
+   };
 
-structural_objectRef get_indexed_storage_port(const structural_objectRef& storage, const std::string& port_name,
-                                              so_kind requested_kind, const std::string& index)
-{
-   if(requested_kind == port_o_K && !index.empty())
+   bool parse_dataflow_memory_port(const structural_objectRef& port, dataflow_memory_port_info& info)
    {
-      const auto vector_port = storage->find_member(port_name, port_vector_o_K, storage);
-      if(vector_port)
+      const std::regex dataflow_memory_port_re("^(?:p)?_DF_bambu_[0-9]+_([0-9]+)FO[0-9]+_(q|address|ce)([0-9]*)$");
+      std::smatch match;
+      const auto port_name = GetPointerS<const port_o>(port)->get_id();
+      if(!std::regex_match(port_name, match, dataflow_memory_port_re))
       {
-         const auto port_index = static_cast<unsigned int>(std::stoul(index));
-         THROW_ASSERT(port_index < GetPointerS<const port_o>(vector_port)->get_ports_size(),
-                      "Port index out of range for " + vector_port->get_path());
-         return GetPointerS<port_o>(vector_port)->get_port(port_index);
+         return false;
       }
+      info.var = static_cast<unsigned int>(std::stoul(match[1].str()));
+      info.kind = match[2].str();
+      info.index = match[3].str();
+      return true;
    }
-   if(const auto port = storage->find_member(port_name, requested_kind, storage))
-   {
-      THROW_ASSERT(port->get_kind() == requested_kind, "Unexpected port kind for " + port->get_path());
-      return port;
-   }
-   return structural_objectRef();
-}
 
-void connect_dataflow_memory_ports(const structural_managerRef& SM, const structural_objectRef& circuit,
-                                   const std::map<unsigned int, structural_objectRef>& storage_by_var,
-                                   unsigned int& unique_id)
-{
-   for(unsigned int module_index = 0; module_index < GetPointerS<module_o>(circuit)->get_internal_objects_size();
-       ++module_index)
+   structural_objectRef get_indexed_storage_port(const structural_objectRef& storage, const std::string& port_name,
+                                                 so_kind requested_kind, const std::string& index)
    {
-      const auto module = GetPointerS<module_o>(circuit)->get_internal_object(module_index);
-      if(!GetPointer<module_o>(module))
+      if(requested_kind == port_o_K && !index.empty())
       {
-         continue;
+         const auto vector_port = storage->find_member(port_name, port_vector_o_K, storage);
+         if(vector_port)
+         {
+            const auto port_index = static_cast<unsigned int>(std::stoul(index));
+            THROW_ASSERT(port_index < GetPointerS<const port_o>(vector_port)->get_ports_size(),
+                         "Port index out of range for " + vector_port->get_path());
+            return GetPointerS<port_o>(vector_port)->get_port(port_index);
+         }
       }
-      const auto module_obj = GetPointerS<module_o>(module);
-      for(unsigned int port_index = 0; port_index < module_obj->get_in_port_size(); ++port_index)
+      if(const auto port = storage->find_member(port_name, requested_kind, storage))
       {
-         const auto port = module_obj->get_in_port(port_index);
-         dataflow_memory_port_info port_info;
-         if(!parse_dataflow_memory_port(port, port_info) || port_info.kind != "q")
-         {
-            continue;
-         }
-         const auto storage_it = storage_by_var.find(port_info.var);
-         if(storage_it == storage_by_var.end())
-         {
-            continue;
-         }
-         const auto storage_port =
-             get_indexed_storage_port(storage_it->second, "out1", port->get_kind(), port_info.index);
-         THROW_ASSERT(storage_port, "Missing local storage output port for " + port->get_path());
-         fu_binding::add_smart_connection(storage_port, port, unique_id++, circuit, SM);
+         THROW_ASSERT(port->get_kind() == requested_kind, "Unexpected port kind for " + port->get_path());
+         return port;
       }
-      for(unsigned int port_index = 0; port_index < module_obj->get_out_port_size(); ++port_index)
+      return structural_objectRef();
+   }
+
+   void connect_dataflow_memory_ports(const structural_managerRef& SM, const structural_objectRef& circuit,
+                                      const std::map<unsigned int, structural_objectRef>& storage_by_var,
+                                      unsigned int& unique_id)
+   {
+      for(unsigned int module_index = 0; module_index < GetPointerS<module_o>(circuit)->get_internal_objects_size();
+          ++module_index)
       {
-         const auto port = module_obj->get_out_port(port_index);
-         dataflow_memory_port_info port_info;
-         if(!parse_dataflow_memory_port(port, port_info))
+         const auto module = GetPointerS<module_o>(circuit)->get_internal_object(module_index);
+         if(!GetPointer<module_o>(module))
          {
             continue;
          }
-         const auto storage_it = storage_by_var.find(port_info.var);
-         if(storage_it == storage_by_var.end())
+         const auto module_obj = GetPointerS<module_o>(module);
+         for(unsigned int port_index = 0; port_index < module_obj->get_in_port_size(); ++port_index)
          {
-            continue;
-         }
-         const std::string storage_port_name =
-             port_info.kind == "address" ? "in2" : port_info.kind == "ce" ? "sel_LOAD" : "";
-         if(storage_port_name.empty())
-         {
-            continue;
-         }
-         const auto storage_port =
-             get_indexed_storage_port(storage_it->second, storage_port_name, port->get_kind(), port_info.index);
-         THROW_ASSERT(storage_port, "Missing local storage input port for " + port->get_path());
-         if(port->get_kind() == port_o_K && storage_port->get_kind() == port_o_K)
-         {
-            const auto* storage_module = GetPointerS<const module_o>(storage_it->second);
-            const auto storage_bitsize_parameter =
-                storage_port_name == "in2" && storage_module->ExistsParameter("BITSIZE_proxy_in2") ?
-                    "BITSIZE_proxy_in2" :
-                    "BITSIZE_" + storage_port_name;
-            const auto storage_bitsize = storage_module->ExistsParameter(storage_bitsize_parameter) ?
-                                             std::stoull(storage_module->GetParameter(storage_bitsize_parameter)) :
-                                             STD_GET_SIZE(storage_port->get_typeRef());
-            if(storage_bitsize > 1U && port->get_typeRef()->type == structural_type_descriptor::BOOL)
+            const auto port = module_obj->get_in_port(port_index);
+            dataflow_memory_port_info port_info;
+            if(!parse_dataflow_memory_port(port, port_info) || port_info.kind != "q")
             {
-               port->get_typeRef()->type = structural_type_descriptor::VECTOR_BOOL;
+               continue;
             }
-            if(storage_bitsize > 1U && storage_port->get_typeRef()->type == structural_type_descriptor::BOOL)
+            const auto storage_it = storage_by_var.find(port_info.var);
+            if(storage_it == storage_by_var.end())
             {
-               storage_port->get_typeRef()->type = structural_type_descriptor::VECTOR_BOOL;
+               continue;
             }
-            port->type_resize(storage_bitsize);
-            storage_port->type_resize(storage_bitsize);
+            const auto storage_port =
+                get_indexed_storage_port(storage_it->second, "out1", port->get_kind(), port_info.index);
+            THROW_ASSERT(storage_port, "Missing local storage output port for " + port->get_path());
+            fu_binding::add_smart_connection(storage_port, port, unique_id++, circuit, SM);
          }
-         fu_binding::add_smart_connection(port, storage_port, unique_id++, circuit, SM);
+         for(unsigned int port_index = 0; port_index < module_obj->get_out_port_size(); ++port_index)
+         {
+            const auto port = module_obj->get_out_port(port_index);
+            dataflow_memory_port_info port_info;
+            if(!parse_dataflow_memory_port(port, port_info))
+            {
+               continue;
+            }
+            const auto storage_it = storage_by_var.find(port_info.var);
+            if(storage_it == storage_by_var.end())
+            {
+               continue;
+            }
+            const std::string storage_port_name = port_info.kind == "address" ? "in2" :
+                                                  port_info.kind == "ce"      ? "sel_LOAD" :
+                                                                                "";
+            if(storage_port_name.empty())
+            {
+               continue;
+            }
+            const auto storage_port =
+                get_indexed_storage_port(storage_it->second, storage_port_name, port->get_kind(), port_info.index);
+            THROW_ASSERT(storage_port, "Missing local storage input port for " + port->get_path());
+            if(port->get_kind() == port_o_K && storage_port->get_kind() == port_o_K)
+            {
+               const auto* storage_module = GetPointerS<const module_o>(storage_it->second);
+               const auto storage_bitsize_parameter =
+                   storage_port_name == "in2" && storage_module->ExistsParameter("BITSIZE_proxy_in2") ?
+                       "BITSIZE_proxy_in2" :
+                       "BITSIZE_" + storage_port_name;
+               const auto storage_bitsize = storage_module->ExistsParameter(storage_bitsize_parameter) ?
+                                                std::stoull(storage_module->GetParameter(storage_bitsize_parameter)) :
+                                                STD_GET_SIZE(storage_port->get_typeRef());
+               if(storage_bitsize > 1U && port->get_typeRef()->type == structural_type_descriptor::BOOL)
+               {
+                  port->get_typeRef()->type = structural_type_descriptor::VECTOR_BOOL;
+               }
+               if(storage_bitsize > 1U && storage_port->get_typeRef()->type == structural_type_descriptor::BOOL)
+               {
+                  storage_port->get_typeRef()->type = structural_type_descriptor::VECTOR_BOOL;
+               }
+               port->type_resize(storage_bitsize);
+               storage_port->type_resize(storage_bitsize);
+            }
+            fu_binding::add_smart_connection(port, storage_port, unique_id++, circuit, SM);
+         }
       }
    }
-}
 
 } // namespace
 

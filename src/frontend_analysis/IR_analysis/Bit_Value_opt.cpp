@@ -1884,8 +1884,9 @@ void Bit_Value_opt::optimize(const function_val_node* fd, const ir_managerRef& T
                                     const auto masking = IRman->create_binary_operation(
                                         ebe->type, GetPointerS<const assign_stmt>(eb_ga)->op0, bit_mask_constant_node,
                                         loc_info_default, and_node_K);
-                                    TM->ReplaceIRNode(stmt, rhs_node,
-                                                      masking); /// replaced with redundant code to restart bit-value analysis
+                                    TM->ReplaceIRNode(
+                                        stmt, rhs_node,
+                                        masking); /// replaced with redundant code to restart bit-value analysis
                                     INDENT_DBG_MEX(DEBUG_LEVEL_VERY_PEDANTIC, debug_level,
                                                    "---replace extract_bit_node usage after: " + stmt->ToString());
                                     modified = true;
