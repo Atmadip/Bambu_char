@@ -51,6 +51,7 @@
 #include "indented_output_stream.hpp"
 #include "instruction_writer.hpp"
 #include "ir_basic_block.hpp"
+#include "ir_helper.hpp"
 #include "ir_manager.hpp"
 #include "loop.hpp"
 #include "loops.hpp"
@@ -505,8 +506,10 @@ void EdgeCWriter::writeRoutineInstructions_rec(unsigned fid, BBGraph::vertex_des
                {
                   if(cond.first)
                   {
+                     const auto cond_expr = behavioral_helper->PrintVariable(cond.first->index);
                      indented_output_stream->Append("else if(");
-                     indented_output_stream->Append(behavioral_helper->PrintVariable(cond.first->index));
+                     indented_output_stream->Append(ir_helper::IsBooleanType(cond.first) ? "((" + cond_expr + ") & 1)" :
+                                                                                           cond_expr);
                      indented_output_stream->Append(")\n");
                   }
                   else

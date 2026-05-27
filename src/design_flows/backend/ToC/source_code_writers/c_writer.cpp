@@ -857,8 +857,10 @@ void CWriter::writeRoutineInstructions_rec(unsigned fid, gc_vertex_descriptor cu
                {
                   if(cond.first)
                   {
+                     const auto cond_expr = behavioral_helper->PrintVariable(cond.first->index);
                      indented_output_stream->Append("else if(");
-                     indented_output_stream->Append(behavioral_helper->PrintVariable(cond.first->index));
+                     indented_output_stream->Append(ir_helper::IsBooleanType(cond.first) ? "((" + cond_expr + ") & 1)" :
+                                                                                           cond_expr);
                      indented_output_stream->Append(")\n");
                   }
                   else

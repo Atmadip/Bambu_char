@@ -74,6 +74,11 @@ std::map<unsigned int, std::string> BehavioralHelper::vars_renaming_table;
 /// Max length of a row (at the moment checked only during constructor_node printing)
 #define MAX_ROW_LENGTH 128
 
+static std::string NormalizePredicateForC(const ir_nodeConstRef& predicate, const std::string& expression)
+{
+   return ir_helper::IsBooleanType(predicate) ? "((" + expression + ") & 1)" : expression;
+}
+
 BehavioralHelper::BehavioralHelper(const application_managerRef _AppM, unsigned int _index,
                                    const ParameterConstRef _parameters)
     : AppM(application_managerRef(_AppM.get(), null_deleter())),
@@ -1915,7 +1920,8 @@ std::string BehavioralHelper::PrintNode(const ir_nodeConstRef& node, const std::
       case select_node_K:
       {
          const auto ce = GetPointerS<const select_node>(node);
-         res = PrintNode(ce->op0, vppf) + " ? " + PrintNode(ce->op1, vppf) + " : " + PrintNode(ce->op2, vppf);
+         res = NormalizePredicateForC(ce->op0, PrintNode(ce->op0, vppf)) + " ? " + PrintNode(ce->op1, vppf) + " : " +
+               PrintNode(ce->op2, vppf);
          break;
       }
       case ternary_add_node_K:
@@ -2047,12 +2053,12 @@ std::string BehavioralHelper::PrintNode(const ir_nodeConstRef& node, const std::
             if(first)
             {
                THROW_ASSERT(cond.first, "First condition of multi way if " + STR(node->index) + " is empty");
-               res += PrintNode(cond.first, vppf);
+               res += NormalizePredicateForC(cond.first, PrintNode(cond.first, vppf));
                first = false;
             }
             else if(cond.first)
             {
-               res += " /* else if(" + PrintNode(cond.first, vppf) + ")*/";
+               res += " /* else if(" + NormalizePredicateForC(cond.first, PrintNode(cond.first, vppf)) + ")*/";
             }
          }
          res += ")";
@@ -2162,7 +2168,7 @@ std::string BehavioralHelper::PrintNode(const ir_nodeConstRef& node, const std::
          }
          if(ms->predicate)
          {
-            res = "if(" + PrintNode(ms->predicate, vppf) + ") " + res;
+            res = "if(" + NormalizePredicateForC(ms->predicate, PrintNode(ms->predicate, vppf)) + ") " + res;
          }
          if(ms->op1->get_kind() == idiv_node_K || ms->op1->get_kind() == irem_node_K)
          {
@@ -2471,7 +2477,7 @@ std::string BehavioralHelper::PrintNode(const ir_nodeConstRef& node, const std::
          res += ")";
          if(ce->predicate)
          {
-            res = "if(" + PrintNode(ce->predicate, vppf) + ") " + res;
+            res = "if(" + NormalizePredicateForC(ce->predicate, PrintNode(ce->predicate, vppf)) + ") " + res;
          }
          break;
       }
