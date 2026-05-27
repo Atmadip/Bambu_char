@@ -172,7 +172,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   interface-test:
     needs: [build]
@@ -229,7 +229,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   AXI4-verification:
     needs: [build]
@@ -250,6 +250,10 @@ jobs:
         run: |
           source ${{env.dist-dir}}/settings.sh
           ./panda_regressions/hls/bambu_axi_verification.sh
+      - name: Clean post-mortem workdirs
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   gcc_regression_simple:
     needs: [build, specific-test]
@@ -313,7 +317,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   gcc_regression_simple-pretty_print:
     needs: [build, specific-test]
@@ -369,7 +373,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   gcc_regression_simple-vhdl:
     needs: [build, specific-test]
@@ -425,7 +429,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   discrepancy-test:
     needs: [build, specific-test]
@@ -468,7 +472,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   softfloat-preliminary:
     needs: [changes]
@@ -544,7 +548,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   libm-preliminary:
     needs: [changes]
@@ -631,7 +635,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   CHStone-multi:
     needs: [build]
@@ -686,7 +690,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
 
   PandA-bench-openroad:
@@ -754,7 +758,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
 
   memarch-tests:
@@ -815,7 +819,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   OpenMP-support:
     needs: [build]
@@ -878,7 +882,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   PandA-bench-altera:
     needs: [build]
@@ -936,7 +940,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   PandA-bench-hw:
     needs: [build]
@@ -994,7 +998,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   PandA-bench-lattice:
     needs: [build]
@@ -1052,7 +1056,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   PandA-bench-nanoxplore:
     needs: [build]
@@ -1110,7 +1114,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   PandA-bench-sim:
     needs: [build]
@@ -1167,7 +1171,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   PandA-bench-xilinx_vvd:
     needs: [build]
@@ -1225,7 +1229,7 @@ jobs:
       - name: Clean post-mortem workdirs
         if: ${{ !cancelled() && (steps.upload-test-reports.outcome == 'success' || steps.upload-test-reports.outcome == 'skipped') }}
         shell: bash
-        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   Make-checks:
     needs: [build]
@@ -1248,6 +1252,10 @@ jobs:
           ./examples/cpp_examples/fir_filter/bambu.sh
           ./examples/cpp_examples/gcd_example/bambu.sh
           ./examples/crypto_designs/multi.sh
+      - name: Clean post-mortem workdirs
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: ./.github/scripts/cleanup-post-mortem-workdirs.sh "${{env.dist-dir}}"
 
   success:
     if: ${{ !cancelled() }}
