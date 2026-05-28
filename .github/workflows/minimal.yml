@@ -1070,8 +1070,8 @@ jobs:
     env:
       test: nanoxplore
       outname: panda_bench_nanoxplore
-      args: -c=--evaluation -c=--parallel-backend=4
-      datapoints: CYCLES,PERIOD,AREA,REGISTERS,DSPS,BRAMS
+      args: -c=--simulate -c=--parallel-backend=4
+      datapoints: CYCLES
       J: 5
     steps:
       - name: Checkout repository
