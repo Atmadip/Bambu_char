@@ -246,7 +246,7 @@ DesignFlowStep_Status OMPLowering::InternalExec()
          }
          else if(stmt->get_kind() == assign_stmt_K)
          {
-            const auto ga = GetPointerS<const assign_stmt>(stmt);
+            const auto ga = GetPointerS<assign_stmt>(stmt);
             const auto ce = GetPointer<const call_node>(ga->op1);
             if(ce)
             {
@@ -286,6 +286,10 @@ DesignFlowStep_Status OMPLowering::InternalExec()
                                                                                                omp_info->local_idx) :
                                                   0U;
                      CGM.RemoveCallPoint(function_id, called_fnode->index, stmt->index);
+                     if(ga->predicate && ga->predicate->get_kind() != constant_int_val_node_K)
+                     {
+                        ga->predicate = TM->CreateUniqueIntegerCst(1, ir_man->GetBooleanType());
+                     }
                      TM->ReplaceIRNode(stmt, ga->op1, TM->CreateUniqueIntegerCst(cval, rtype));
                   }
                   else

@@ -3878,7 +3878,7 @@ void ir_helper::get_required_values(std::vector<std::tuple<unsigned int, unsigne
             }
             get_required_values(required, gm->op1);
          }
-         if(gm->predicate && op1_kind != call_node_K)
+         if(gm->predicate && gm->predicate->get_kind() != constant_int_val_node_K && op1_kind != call_node_K)
          {
             get_required_values(required, gm->predicate);
          }
