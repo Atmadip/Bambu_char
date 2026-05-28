@@ -12,6 +12,11 @@ on:
         description: 'Upload artifacts (1=yes, 0=no)'
         required: false
         default: '0'
+      no-clean:
+        description: 'Pass --no-clean to regression scripts'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,6 +32,7 @@ concurrency:
 
 env:
   upload-artifacts: ${{ inputs.upload-artifacts || '0' }}
+  NO_CLEAN_ARG: ${{ inputs['no-clean'] && '--no-clean' || '' }}
   report-dir: test-reports
   storage-url: "${{secrets.CI_STORAGE_URL}}"
   storage-user: "${{secrets.CI_STORAGE_USER}}"
@@ -144,7 +150,7 @@ jobs:
         run: |
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
-          ./panda_regressions/hls/bambu_specific_test${{matrix.id}}.sh --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./panda_regressions/hls/bambu_specific_test${{matrix.id}}.sh ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -201,7 +207,7 @@ jobs:
         run: |
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
-          ${{env.script}} --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ${{env.script}} ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -289,7 +295,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./panda_regressions/hls/${{matrix.script}} --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{matrix.args}}
+          ./panda_regressions/hls/${{matrix.script}} ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{matrix.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -345,7 +351,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./panda_regressions/hls/${{env.script}} --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./panda_regressions/hls/${{env.script}} ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -401,7 +407,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./panda_regressions/hls/${{env.script}} --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./panda_regressions/hls/${{env.script}} ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -457,7 +463,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./panda_regressions/hls/${{env.script}} --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./panda_regressions/hls/${{env.script}} ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -520,7 +526,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./panda_regressions/hls/${{env.script}} --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./panda_regressions/hls/${{env.script}} ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -607,7 +613,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./panda_regressions/hls/${{env.script}} --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{matrix.args}} ${{env.args}}
+          ./panda_regressions/hls/${{env.script}} ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{matrix.args}} ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -662,7 +668,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./panda_regressions/hls/${{env.script}} --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./panda_regressions/hls/${{env.script}} ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -729,7 +735,7 @@ jobs:
           export OPENROAD_USE_DOCKER=1
 
           OPENROAD_CONFIGURATION="${{matrix.config.name}}" \
-            ./examples/panda_bench_openroad.sh --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+            ./examples/panda_bench_openroad.sh ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -792,7 +798,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./panda_regressions/hls/${{matrix.script}} --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{matrix.args}}
+          ./panda_regressions/hls/${{matrix.script}} ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{matrix.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -854,7 +860,7 @@ jobs:
         run: |
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
-          ${{matrix.script}} --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ${{matrix.script}} ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -911,7 +917,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./examples/panda_bench_${{env.test}}.sh --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./examples/panda_bench_${{env.test}}.sh ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -969,7 +975,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./examples/panda_bench_${{env.test}}.sh --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./examples/panda_bench_${{env.test}}.sh ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -1027,7 +1033,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./examples/panda_bench_${{env.test}}.sh --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./examples/panda_bench_${{env.test}}.sh ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -1085,7 +1091,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./examples/panda_bench_${{env.test}}.sh --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./examples/panda_bench_${{env.test}}.sh ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -1142,7 +1148,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./examples/panda_bench_${{env.test}}.sh --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./examples/panda_bench_${{env.test}}.sh ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
@@ -1200,7 +1206,7 @@ jobs:
           source ${{env.dist-dir}}/settings.sh
           mkdir -p ${{env.report-dir}}
           echo "test-reports-dir=$PWD/${{env.report-dir}}" >> $GITHUB_OUTPUT
-          ./examples/panda_bench_${{env.test}}.sh --no-clean --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
+          ./examples/panda_bench_${{env.test}}.sh ${{env.NO_CLEAN_ARG}} --returnfail --junitdir="${{env.report-dir}}" --summary="${{env.report-dir}}/perf.xml" ${{env.args}}
       - name: Collect post-mortem data
         if: ${{ failure() }}
         shell: bash
