@@ -288,7 +288,8 @@ DesignFlowStep_Status OMPLowering::InternalExec()
                      CGM.RemoveCallPoint(function_id, called_fnode->index, stmt->index);
                      if(ga->predicate && ga->predicate->get_kind() != constant_int_val_node_K)
                      {
-                        ga->predicate = TM->CreateUniqueIntegerCst(1, ir_man->GetBooleanType());
+                        TM->ReplaceIRNode(stmt, ga->predicate, TM->CreateUniqueIntegerCst(1, ir_man->GetBooleanType()));
+                        ga->predicate = nullptr;
                      }
                      TM->ReplaceIRNode(stmt, ga->op1, TM->CreateUniqueIntegerCst(cval, rtype));
                   }
