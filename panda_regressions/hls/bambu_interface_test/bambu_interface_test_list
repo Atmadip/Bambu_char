@@ -106,6 +106,7 @@ axi_small_write.c --top-fname=vector_copy_plus --generate-tb=BENCHMARKS_ROOT/axi
 axi_different_write.c --top-fname=vector_copy_plus --generate-tb=BENCHMARKS_ROOT/axi_different_write.c --benchmark-name=axi_different_write
 axi_different_write.c --top-fname=vector_copy_plus --generate-tb=BENCHMARKS_ROOT/axi_different_write.c -DBIG_BUS --benchmark-name=axi_different_write_64 -m64
 axi_different_write.c --top-fname=vector_copy_plus --generate-tb=BENCHMARKS_ROOT/axi_different_write.c --benchmark-name=axi_different_write_delayed --memory-allocation-policy=GLSS --mem-delay-read=20 --mem-delay-write=20
+axi_wb_single_line.cpp --top-fname=kernel --generate-interface=INFER --generate-tb=BENCHMARKS_ROOT/axi_wb_single_line.cpp --benchmark-name=axi_wb_single_line
 2mm.c --top-fname=mmult --generate-tb=BENCHMARKS_ROOT/2mm.c -DBIG_BUFFER --benchmark-name=2mm_cache_big_buffer
 2mm.c --top-fname=mmult --generate-tb=BENCHMARKS_ROOT/2mm.c -DBIG_BUS --benchmark-name=2mm_cache_big_bus
 2mm.c --top-fname=mmult --generate-tb=BENCHMARKS_ROOT/2mm.c -DBIG --benchmark-name=2mm_cache_big

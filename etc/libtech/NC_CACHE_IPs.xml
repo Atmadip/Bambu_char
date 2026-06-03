@@ -2425,8 +2425,9 @@ reg [N_WAYS*(2**LINE_OFF_W)-1:0] dirty_reg;
 
 
 localparam S_IDLE = 2&apos;b00, S_ADDR = 2&apos;b01, S_WRITE = 2&apos;b10;
+localparam FLUSH_ADDR_W = (LINE_OFF_W + NWAY_W) &gt; 0 ? (LINE_OFF_W + NWAY_W) : 1;
 reg [1:0] flush_state = S_IDLE, next_flush_state;
-reg [(LINE_OFF_W + NWAY_W) - 1: 0] flush_addr, next_flush_addr;
+reg [FLUSH_ADDR_W - 1: 0] flush_addr, next_flush_addr;
 
 
 generate
@@ -2434,6 +2435,11 @@ generate
   begin
       assign index     = addr    [FE_ADDR_W-TAG_W-1 - (BE_BYTE_W + LINE2MEM_W) -:LINE_OFF_W];//cant wait, doesnt update during a write-access
       assign index_reg = addr_reg[FE_ADDR_W-TAG_W-1 - (FE_BYTE_W) -:INDEX_W];//cant wait, doesnt update during a write-access
+  end
+  else
+  begin
+      assign index     = {INDEX_W{1&apos;b0}};
+      assign index_reg = {INDEX_W{1&apos;b0}};
   end
 endgenerate
 
@@ -2583,7 +2589,7 @@ generate
     assign wtbuf_full = buffer_full;
     assign wtbuf_empty = buffer_empty &amp; write_ready &amp; ~write_valid;
 
-    assign dirty_mem = |dirty_reg || buf_dirty;
+    assign dirty_mem = |dirty_reg || buf_dirty || write_valid;
     //back-end read channel
     assign replace_valid = (~|way_hit) &amp; (write_ready) &amp; valid_reg &amp; ~replace;
 
@@ -2591,7 +2597,7 @@ generate
   
     //back-end write channel
     assign write_wstrb = {FE_NBYTES{1&apos;bx}};
-    assign write_addr = buffer_dout[FIFO_DATA_W - 1 -: (FE_ADDR_W - FE_BYTE_W)];
+    assign write_addr = buffer_dout[FIFO_DATA_W - 1 - WORD_OFF_W -: (FE_ADDR_W - (FE_BYTE_W + WORD_OFF_W))];
     assign write_wdata = buffer_dout[(2**WORD_OFF_W)*FE_DATA_W - 1 : 0];        
   end
 endgenerate
@@ -3043,31 +3049,59 @@ generate
           else
             v &lt;= v_reg [index];
 
-        if(WRITE_POL == `WRITE_BACK)
+        if(LINE_OFF_W &gt; 0)
         begin
-          //tag-memory
-          IOB_ram_sp #(.BITSIZE_addr(LINE_OFF_W),
-            .BITSIZE_dout(TAG_W),
-            .BITSIZE_din(TAG_W))
-          tag_memory (.clock (clock),
-            .en(valid || flush_state == S_ADDR),
-            .we(replace_valid),
-            .addr(flush_state == S_ADDR ? flush_addr[LINE_OFF_W - 1 : 0] : index),
-            .din(tag),
-            .dout(line_tag));
+          if(WRITE_POL == `WRITE_BACK)
+          begin
+            //tag-memory
+            IOB_ram_sp #(.BITSIZE_addr(LINE_OFF_W),
+              .BITSIZE_dout(TAG_W),
+              .BITSIZE_din(TAG_W))
+            tag_memory (.clock (clock),
+              .en(valid || flush_state == S_ADDR),
+              .we(replace_valid),
+              .addr(flush_state == S_ADDR ? flush_addr[LINE_OFF_W - 1 : 0] : index),
+              .din(tag),
+              .dout(line_tag));
+          end
+          else
+          begin
+            //tag-memory
+            IOB_ram_sp #(.BITSIZE_addr(LINE_OFF_W),
+              .BITSIZE_dout(TAG_W),
+              .BITSIZE_din(TAG_W))
+            tag_memory (.clock (clock),
+              .en(valid),
+              .we(replace_valid),
+              .addr(index),
+              .din(tag),
+              .dout(line_tag));
+          end
         end
         else
         begin
-          //tag-memory
-          IOB_ram_sp #(.BITSIZE_addr(LINE_OFF_W),
-            .BITSIZE_dout(TAG_W),
-            .BITSIZE_din(TAG_W))
-          tag_memory (.clock (clock),
-            .en(valid),
-            .we(replace_valid),
-            .addr(index),
-            .din(tag),
-            .dout(line_tag));
+          if(WRITE_POL == `WRITE_BACK)
+          begin
+            //tag-memory
+            IOB_ram_sp_no_addr #(.BITSIZE_dout(TAG_W),
+              .BITSIZE_din(TAG_W))
+            tag_memory (.clock (clock),
+              .en(valid || flush_state == S_ADDR),
+              .we(replace_valid),
+              .din(tag),
+              .dout(line_tag));
+          end
+          else
+          begin
+            //tag-memory
+            IOB_ram_sp_no_addr #(.BITSIZE_dout(TAG_W),
+              .BITSIZE_din(TAG_W))
+            tag_memory (.clock (clock),
+              .en(valid),
+              .we(replace_valid),
+              .din(tag),
+              .dout(line_tag));
+          end
         end
 
 
@@ -3099,7 +3133,11 @@ generate
           end
 
           assign buf_w_en = ((write_access || read_access) &amp;&amp; (~(way_hit) &amp; dirty) &amp;&amp; replace_valid) || flush_state == S_WRITE;
-          assign buf_w_data = {{line_tag, flush_state == S_WRITE ? flush_addr[LINE_OFF_W - 1 : 0] : index_reg}, line_rdata};
+          if(LINE_OFF_W &gt; 0) begin
+            assign buf_w_data = {{line_tag, flush_state == S_WRITE ? flush_addr[LINE_OFF_W - 1 : 0] : index_reg}, line_rdata};
+          end else begin
+            assign buf_w_data = {line_tag, line_rdata};
+          end
         end 
     end // else: !if(N_WAYS &gt; 1)
 endgenerate
