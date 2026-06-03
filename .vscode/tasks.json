@@ -2,13 +2,19 @@
    "version": "2.0.0",
    "tasks": [
       {
-         "label": "Build dev",
+         "label": "CMake Configure Release",
          "type": "shell",
-         "command": "make",
+         "command": "cmake",
          "args": [
-            "install",
-            "CONFIGURE_FLAGS=\"--prefix=${workspaceFolder}/panda_dist --enable-opt --with-opt-level=2 --disable-release --enable-Werror\"",
-            "-j8"
+            "-S",
+            ".",
+            "-B",
+            "build",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_INSTALL_PREFIX=${workspaceFolder}/install",
+            "-DPANDA_ENABLE_RELEASE=OFF",
+            "-G",
+            "Ninja"
          ],
          "problemMatcher": "$gcc",
          "group": {
@@ -16,15 +22,39 @@
          }
       },
       {
-         "label": "Build release",
+         "label": "CMake Build",
          "type": "shell",
-         "command": "make",
+         "command": "cmake",
          "args": [
-            "install",
-            "CONFIGURE_FLAGS=\"--prefix=${workspaceFolder}/panda_dist --enable-opt --with-opt-level=2 --enable-release --disable-asserts --enable-Werror\"",
-            "-j8"
+            "--build",
+            "build"
          ],
          "problemMatcher": "$gcc",
+         "group": {
+            "kind": "build"
+         }
+      },
+      {
+         "label": "CMake Install",
+         "type": "shell",
+         "command": "cmake",
+         "args": [
+            "--install",
+            "build"
+         ],
+         "problemMatcher": "$gcc",
+         "group": {
+            "kind": "build"
+         }
+      },
+      {
+         "label": "CMake Configure Build Install",
+         "dependsOrder": "sequence",
+         "dependsOn": [
+            "CMake Configure Release",
+            "CMake Build",
+            "CMake Install"
+         ],
          "group": {
             "kind": "build",
             "isDefault": true
