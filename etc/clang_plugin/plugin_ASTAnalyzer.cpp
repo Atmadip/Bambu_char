@@ -1079,6 +1079,28 @@ class CacheHLSPragmaHandler : public HLSPragmaAnalyzer, public HLSPragmaParser
       }
    }
 
+   void finalize(FunctionDecl* FD) override
+   {
+      const auto functionSym = MangledName(FD);
+      const auto funcIt = _func_attributes.find(functionSym);
+      if(funcIt == _func_attributes.end())
+      {
+         return;
+      }
+      auto& func_ifaces = funcIt->second.ifaces;
+      for(const auto& bundle : func_ifaces.bundles)
+      {
+         const auto& iface = bundle.second;
+         if(iface.find(key_loc_t("cache_line_count", SourceLocation())) != iface.end() &&
+            iface.find(key_loc_t("mode", SourceLocation())) == iface.end())
+         {
+            auto nameAttr = iface.find(key_loc_t("name", SourceLocation()));
+            const auto loc = nameAttr != iface.end() ? nameAttr->first.loc : FD->getLocation();
+            ReportError(loc, "Cache pragma references unknown interface bundle '" + bundle.first + "'");
+         }
+      }
+   }
+
    static const char* PragmaKeyword;
 };
 const char* CacheHLSPragmaHandler::PragmaKeyword = "cache";
