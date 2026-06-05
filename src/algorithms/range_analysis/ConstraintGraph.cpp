@@ -1430,12 +1430,12 @@ void ConstraintGraph::solveFuturesSC(VarNode* varNode, const UseMap& symbMap) co
 /// Iterates through all instructions in the function and builds the graph.
 void ConstraintGraph::buildGraph(unsigned int function_id, bool computeESSA)
 {
+#ifndef NDEBUG
    const auto TM = AppM->get_ir_manager();
-   const auto FB = AppM->CGetFunctionBehavior(function_id);
    const auto fnode = TM->GetIRNode(function_id);
    const auto* fd = GetPointerS<const function_val_node>(fnode);
-   THROW_ASSERT(fd->body, "");
    const auto* sl = GetPointerS<const statement_list_node>(fd->body);
+#endif
    INDENT_DBG_MEX(DEBUG_LEVEL_VERY_PEDANTIC, debug_level,
                   "Analysing function " + ir_helper::GetFunctionName(fnode) + " with " + STR(sl->list_of_bloc.size()) +
                       " blocks");
