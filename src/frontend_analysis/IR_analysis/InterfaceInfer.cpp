@@ -41,6 +41,7 @@
 #include "InterfaceInfer.hpp"
 
 #include "CompilerWrapper.hpp"
+#include "IR/function_ordered_instructions.hpp"
 #include "Parameter.hpp"
 #include "application_manager.hpp"
 #include "area_info.hpp"
@@ -74,6 +75,7 @@
 #include "time_info.hpp"
 #include "var_pp_functor.hpp"
 
+#include <memory>
 #include <regex>
 #include <sstream>
 
@@ -85,6 +87,49 @@
 
 namespace
 {
+   using OrderedInstructionsCache = std::map<unsigned int, std::unique_ptr<FunctionOrderedInstructions>>;
+
+   bool isScalarPointerProtocolWithoutReadback(const std::string& interface_name)
+   {
+      return interface_name == "none" || interface_name == "valid" || interface_name == "ovalid" ||
+             interface_name == "handshake" || interface_name == "acknowledge";
+   }
+
+   bool hasWriteBeforeRead(const std::list<ir_nodeRef>& writeStmt, const std::list<ir_nodeRef>& readStmt,
+                           const application_managerRef& AppM, OrderedInstructionsCache& ordered_instructions)
+   {
+      const auto get_ordered_instructions = [&](const ir_nodeRef& stmt) -> FunctionOrderedInstructions& {
+         const auto stmt_node = GetPointerS<const node_stmt>(stmt);
+         THROW_ASSERT(stmt_node->parent && stmt_node->parent->get_kind() == function_val_node_K,
+                      "expected a function_val_node scope");
+         const auto fd = GetPointerS<const function_val_node>(stmt_node->parent);
+         THROW_ASSERT(fd->body, "expected a body");
+         auto oi_it = ordered_instructions.find(fd->index);
+         if(oi_it == ordered_instructions.end())
+         {
+            oi_it =
+                ordered_instructions.emplace(fd->index, std::make_unique<FunctionOrderedInstructions>(AppM, fd->index))
+                    .first;
+         }
+         return *oi_it->second;
+      };
+
+      for(const auto& write_stmt : writeStmt)
+      {
+         const auto write_stmt_node = GetPointerS<const node_stmt>(write_stmt);
+         for(const auto& read_stmt : readStmt)
+         {
+            const auto read_stmt_node = GetPointerS<const node_stmt>(read_stmt);
+            if(write_stmt_node->parent == read_stmt_node->parent &&
+               get_ordered_instructions(write_stmt).dominates(write_stmt, read_stmt))
+            {
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
    std::string getHDLGeneratorNameToken(const std::string& interface_name)
    {
       if(interface_name == "DP_array")
@@ -648,6 +693,7 @@ DesignFlowStep_Status InterfaceInfer::Exec()
       std::map<std::string, IRNodeSet> bundle_vdefs;
       std::map<std::string, ir_nodeRef> channel_read_vdefs;
       std::map<std::string, ir_nodeRef> channel_write_vdefs;
+      OrderedInstructionsCache ordered_instructions;
       for(const auto& arg : fd->list_of_args)
       {
          const auto arg_id = arg->index;
@@ -778,7 +824,7 @@ DesignFlowStep_Status InterfaceInfer::Exec()
                         {
                            parm_attrs[FunctionArchitecture::parm_elem_count] = STR(info.factor);
                         }
-                        return "array";
+                        return interface_type;
                      }
                      else if(interface_type == "ptrdefault")
                      {
@@ -790,20 +836,30 @@ DesignFlowStep_Status InterfaceInfer::Exec()
                         else if(parameters->IsParameter("none-ptrdefault") &&
                                 parameters->GetParameter<int>("none-ptrdefault") == 1)
                         {
-                           return "none";
+                           interface_type = "none";
                         }
                         else if(parameters->IsParameter("none-registered-ptrdefault") &&
                                 parameters->GetParameter<int>("none-registered-ptrdefault") == 1)
                         {
                            iface_attrs[FunctionArchitecture::iface_register] = "";
-                           return "none";
+                           interface_type = "none";
                         }
-                        return "ovalid";
+                        interface_type = "ovalid";
                      }
                      else if(interface_type == "fifo" || interface_type == "axis")
                      {
                         THROW_ERROR_USAGE("Parameter '" + arg_name + "' cannot use interface '" + interface_type +
                                           "' because it is both read and written. Use an interface that supports I/O.");
+                     }
+                     THROW_ASSERT(interface_type != "ptrdefault", "unexpected condition");
+                     if(isScalarPointerProtocolWithoutReadback(interface_type) &&
+                        hasWriteBeforeRead(writeStmt, readStmt, AppM, ordered_instructions))
+                     {
+                        THROW_ERROR_USAGE("Parameter '" + arg_name + "' in function '" + fsymbol +
+                                          "' uses inferred scalar pointer interface '" + interface_type +
+                                          "' but the pointer is written before it is read. Scalar protocols 'none', "
+                                          "'handshake', 'acknowledge', 'valid', and 'ovalid' do not support pointer "
+                                          "read-after-write semantics. Use 'array', 'bus', or 'm_axi'.");
                      }
                   }
                   else if(isRead)

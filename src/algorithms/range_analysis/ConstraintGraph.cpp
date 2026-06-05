@@ -40,13 +40,12 @@
 #include "ConstraintGraph.hpp"
 
 #include "BinaryOpNode.hpp"
+#include "IR/function_ordered_instructions.hpp"
 #include "Meet.hpp"
 #include "Nuutila.hpp"
 #include "OpNode.hpp"
-#include "OrderedInstructions.hpp"
 #include "Parameter.hpp"
 #include "PhiOpNode.hpp"
-#include "SemiNCADominance.hpp"
 #include "SigmaOpNode.hpp"
 #include "SymbValueRange.hpp"
 #include "UnaryOpNode.hpp"
@@ -248,60 +247,6 @@ namespace
 
       void processMultiWayIf(const ir_nodeConstRef& tn);
    };
-
-   BBGraph compute_dominator_tree(const std::map<unsigned int, blocRef>& list_of_bloc, BBGraphsCollection& bbgc)
-   {
-      BBGraph DT(bbgc, D_SELECTOR);
-      auto& inverse_vertex_map = DT.GetGraphInfo().bb_index_map;
-      for(const auto& [bbi, bb] : list_of_bloc)
-      {
-         inverse_vertex_map.try_emplace(bbi, bbgc.AddVertex(BBNodeInfo(bb)));
-      }
-      THROW_ASSERT(list_of_bloc.size() == inverse_vertex_map.size(), "");
-
-      THROW_ASSERT(inverse_vertex_map.count(bloc::ENTRY_BLOCK_ID), "Entry BB does not exist");
-      THROW_ASSERT(inverse_vertex_map.count(bloc::EXIT_BLOCK_ID), "Exit BB does not exist");
-      const auto entry_v = inverse_vertex_map.at(bloc::ENTRY_BLOCK_ID);
-      const auto exit_v = inverse_vertex_map.at(bloc::EXIT_BLOCK_ID);
-
-      for(const auto& [bbi, bb] : list_of_bloc)
-      {
-         const auto bbv = inverse_vertex_map.at(bbi);
-         for(const auto& lop : bb->list_of_pred)
-         {
-            THROW_ASSERT(inverse_vertex_map.count(lop),
-                         "BB" + STR(lop) + " (successor of BB" + STR(bbi) + ") does not exist");
-            bbgc.AddEdge(inverse_vertex_map.at(lop), bbv, CFG_SELECTOR);
-         }
-
-         for(const auto& los : bb->list_of_succ)
-         {
-            if(los == bloc::EXIT_BLOCK_ID)
-            {
-               bbgc.AddEdge(bbv, exit_v, CFG_SELECTOR);
-            }
-         }
-
-         if(bb->list_of_succ.empty())
-         {
-            bbgc.AddEdge(bbv, exit_v, CFG_SELECTOR);
-         }
-      }
-
-      /// add a connection between entry and exit thus avoiding problems with non terminating code
-      bbgc.AddEdge(entry_v, exit_v, CFG_SELECTOR);
-
-      BBGraph cfg(bbgc, CFG_SELECTOR);
-      dominance<BBGraph> bb_dominators(cfg, entry_v, exit_v);
-      bb_dominators.forEachDominanceRelation(
-          [&](const BBGraph::vertex_descriptor child, const BBGraph::vertex_descriptor dom_vertex) {
-             if(child != entry_v)
-             {
-                bbgc.AddEdge(dom_vertex, child, D_SELECTOR);
-             }
-          });
-      return DT;
-   }
 
    IRVisitor::IRVisitor(RenameInfos& infos, NodeContainer* nc, unsigned int function_id, application_managerRef _AppM,
                         bool computeESSA
@@ -803,8 +748,8 @@ namespace
    // the minimum number of instructions necessary to compute our def/use ordering.
    struct ValueDFS_Compare
    {
-      OrderedInstructions& OI;
-      explicit ValueDFS_Compare(OrderedInstructions& _OI) : OI(_OI)
+      const OrderedInstructions& OI;
+      explicit ValueDFS_Compare(const OrderedInstructions& _OI) : OI(_OI)
       {
       }
 
@@ -1496,8 +1441,9 @@ void ConstraintGraph::buildGraph(unsigned int function_id, bool computeESSA)
                       " blocks");
    INDENT_DBG_MEX(DEBUG_LEVEL_VERY_PEDANTIC, debug_level, "-->");
 
-   BBGraphsCollection bbgc(BBGraphInfo(AppM, function_id));
-   const auto dt = compute_dominator_tree(sl->list_of_bloc, bbgc);
+   FunctionOrderedInstructions function_ordered_instructions(AppM, function_id);
+   const auto& dt = function_ordered_instructions.getDT();
+   const auto& OI = function_ordered_instructions.getOrderedInstructions();
 
    RenameInfos infos;
    {
@@ -1536,7 +1482,6 @@ void ConstraintGraph::buildGraph(unsigned int function_id, bool computeESSA)
                          "Missing instruction for use of " + STR(vuse->getOperand()->getValue()));
          }
 #endif
-         OrderedInstructions OI(dt);
          std::sort(OpsToRename.begin(), OpsToRename.end(), [&](const VarUseRef& A, const VarUseRef& B) {
             return OI.dominates(A->getInstruction(), B->getInstruction());
          });
