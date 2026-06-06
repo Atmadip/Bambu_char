@@ -202,6 +202,12 @@ def main():
 	clock_name = config.find('./top_module').get('clock_name')
 	project.createClock(target= f'getClockNet({clock_name})', name=clock_name, period=clock_period_ns)
 
+	# OOC/EMBEDDED fix: bind the clock to a system-interface pin (TSI) so it is
+	# not promoted to an unconfigured physical Global Clock Input (GCI), which
+	# makes Routing step 3/3 fail the 'AnyInstance HasConfig' check.
+	if not connect_iob:
+		project.addPins({clock_name: 'TSI1'})
+
 	if connect_iob and path.exists(pads_filename):
 		from pads import pads
 		project.addPads(pads)
