@@ -70,7 +70,7 @@ class SimulationInformation;
    (iface_name)(iface_global)(iface_mode)(iface_direction)(iface_bitwidth)(iface_alignment)(iface_depth)(          \
        iface_register)(iface_cache_ways)(iface_cache_line_count)(iface_cache_line_size)(                           \
        iface_cache_num_write_outstanding)(iface_cache_rep_policy)(iface_cache_bus_size)(iface_cache_write_policy)( \
-       iface_bank_number)(iface_chunk_size)
+       iface_cache_word_size)(iface_bank_number)(iface_chunk_size)
 
 REF_FORWARD_DECL(FunctionArchitecture);
 

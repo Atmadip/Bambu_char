@@ -694,6 +694,36 @@ DesignFlowStep_Status InterfaceInfer::Exec()
       std::map<std::string, ir_nodeRef> channel_read_vdefs;
       std::map<std::string, ir_nodeRef> channel_write_vdefs;
       OrderedInstructionsCache ordered_instructions;
+      std::map<std::string, unsigned long long> bundle_max_storage_bitwidth;
+      for(const auto& arg : fd->list_of_args)
+      {
+         const auto arg_name = get_decl_name(arg);
+         const auto arg_type = ir_helper::CGetType(arg);
+         if(func_arch->parms.find(arg_name) == func_arch->parms.end() || !ir_helper::IsPointerType(arg_type))
+         {
+            continue;
+         }
+         const auto& parm_attrs = func_arch->parms.at(arg_name);
+         if(parm_attrs.find(FunctionArchitecture::parm_bundle) == parm_attrs.end())
+         {
+            continue;
+         }
+         const auto iface_it = func_arch->ifaces.find(parm_attrs.at(FunctionArchitecture::parm_bundle));
+         if(iface_it == func_arch->ifaces.end() ||
+            iface_it->second.find(FunctionArchitecture::iface_mode) == iface_it->second.end() ||
+            iface_it->second.at(FunctionArchitecture::iface_mode) != "m_axi")
+         {
+            continue;
+         }
+         auto storage_type = ir_helper::CGetPointedType(arg_type);
+         if(ir_helper::IsArrayEquivType(storage_type))
+         {
+            storage_type = ir_helper::CGetArrayBaseType(storage_type);
+         }
+         const auto storage_bitwidth = std::max(8ULL, ceil_pow2(ir_helper::SizeAlloc(storage_type)));
+         auto& max_storage_bitwidth = bundle_max_storage_bitwidth[parm_attrs.at(FunctionArchitecture::parm_bundle)];
+         max_storage_bitwidth = std::max(max_storage_bitwidth, storage_bitwidth);
+      }
       for(const auto& arg : fd->list_of_args)
       {
          const auto arg_id = arg->index;
@@ -718,7 +748,14 @@ DesignFlowStep_Status InterfaceInfer::Exec()
                       "Missing parameter bundle: " + parm_attrs.at(FunctionArchitecture::parm_bundle));
          auto& iface_attrs = func_arch->ifaces.at(parm_attrs.at(FunctionArchitecture::parm_bundle));
          iface_attrs[FunctionArchitecture::iface_direction] = port_o::GetString(port_o::IN);
-         iface_attrs[FunctionArchitecture::iface_bitwidth] = STR(ir_helper::Size(arg_type));
+         const auto is_pointer_type = ir_helper::IsPointerType(arg_type);
+         const auto raw_interface_type = iface_attrs.at(FunctionArchitecture::iface_mode);
+         const auto default_iface_bitwidth =
+             is_pointer_type ?
+                 ((raw_interface_type == "bus" || raw_interface_type == "default") ? ir_helper::Size(arg_type) : 0ULL) :
+                 ir_helper::Size(arg_type);
+         auto& iface_bitwidth = iface_attrs[FunctionArchitecture::iface_bitwidth];
+         iface_bitwidth = STR(std::max(default_iface_bitwidth, iface_bitwidth.empty() ? 0ULL : std::stoull(iface_bitwidth)));
          iface_attrs[FunctionArchitecture::iface_alignment] =
              std::to_string(get_aligned_bitsize(ir_helper::Size(arg_type)) >> 3);
          auto& interface_type = iface_attrs[FunctionArchitecture::iface_mode];
@@ -757,6 +794,19 @@ DesignFlowStep_Status InterfaceInfer::Exec()
                INDENT_DBG_MEX(DEBUG_LEVEL_PEDANTIC, debug_level, "---Is a pointer type");
                interface_info info(arg_name, fsymbol, interface_type != "m_axi", parm_attrs, iface_attrs);
                info.update(arg_ssa, parm_attrs.at(FunctionArchitecture::parm_typename), parameters);
+               if(interface_type == "m_axi" &&
+                  iface_attrs.find(FunctionArchitecture::iface_cache_line_count) != iface_attrs.end())
+               {
+                  auto storage_type = ir_helper::CGetPointedType(arg_type);
+                  if(ir_helper::IsArrayEquivType(storage_type))
+                  {
+                     storage_type = ir_helper::CGetArrayBaseType(storage_type);
+                  }
+                  const auto cache_word_bitsize = ceil_pow2(std::max(info.bitwidth, ir_helper::SizeAlloc(storage_type)));
+                  auto& cache_word_size = iface_attrs[FunctionArchitecture::iface_cache_word_size];
+                  cache_word_size = std::to_string(
+                      std::max(cache_word_size.empty() ? 0ULL : std::stoull(cache_word_size), cache_word_bitsize));
+               }
 
                std::list<ir_nodeRef> writeStmt;
                std::list<ir_nodeRef> readStmt;
@@ -928,7 +978,14 @@ DesignFlowStep_Status InterfaceInfer::Exec()
                   }
                   return interface_type;
                }();
-               iface_attrs[FunctionArchitecture::iface_bitwidth] = std::to_string(info.bitwidth);
+               const auto& parm_bundle = parm_attrs.at(FunctionArchitecture::parm_bundle);
+               const auto bundle_max_bitwidth =
+                   interface_type == "m_axi" && bundle_max_storage_bitwidth.find(parm_bundle) != bundle_max_storage_bitwidth.end() ?
+                       bundle_max_storage_bitwidth.at(parm_bundle) :
+                       0ULL;
+               iface_attrs[FunctionArchitecture::iface_bitwidth] =
+                   std::to_string(std::max(std::max(info.bitwidth, bundle_max_bitwidth),
+                                           std::stoull(iface_attrs[FunctionArchitecture::iface_bitwidth])));
                iface_attrs[FunctionArchitecture::iface_alignment] = std::to_string(info.alignment);
                if(interface_type == "fifo" || interface_type == "axis")
                {
@@ -2602,17 +2659,21 @@ void InterfaceInfer::create_resource_m_axi(const std::set<std::string>& operatio
       GetPointerS<module_o>(interface_top)->set_multi_unit_multiplicity(1U);
 
       const auto address_bitsize = HLSMgr->get_address_bitsize();
-      const auto nbitDataSize = 64u - static_cast<unsigned>(__builtin_clzll(info.bitwidth));
+      const auto interface_bitwidth =
+          iface_attrs.find(FunctionArchitecture::iface_bitwidth) != iface_attrs.end() ?
+              std::stoull(iface_attrs.find(FunctionArchitecture::iface_bitwidth)->second) :
+              info.bitwidth;
+      const auto nbitDataSize = 64u - static_cast<unsigned>(__builtin_clzll(interface_bitwidth));
       const auto backEndBitsize =
           iface_attrs.find(FunctionArchitecture::iface_cache_bus_size) != iface_attrs.end() ?
               std::stoull(iface_attrs.find(FunctionArchitecture::iface_cache_bus_size)->second) :
-              info.bitwidth;
+              interface_bitwidth;
 
       const structural_type_descriptorRef address_interface_datatype(
           new structural_type_descriptor("bool", address_bitsize));
       const structural_type_descriptorRef size1(new structural_type_descriptor("bool", 1));
       const structural_type_descriptorRef rwsize(new structural_type_descriptor("bool", nbitDataSize));
-      const structural_type_descriptorRef rwtypeIn(new structural_type_descriptor("bool", info.bitwidth));
+      const structural_type_descriptorRef rwtypeIn(new structural_type_descriptor("bool", interface_bitwidth));
       const structural_type_descriptorRef rwtypeOut(new structural_type_descriptor("bool", backEndBitsize));
       const structural_type_descriptorRef idType(new structural_type_descriptor("bool", 6));
       const structural_type_descriptorRef lenType(new structural_type_descriptor("bool", 8));

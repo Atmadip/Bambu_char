@@ -186,9 +186,15 @@ void ReadWriteMAXIHDLGenerator::InternalExec(std::ostream& out, structural_objec
 
    if(line_count != 0)
    {
-      out << "// BITSIZE_log_data_size = log2(BITISZE_in3 >> 3)\n"
-          << "localparam BITSIZE_log_data_size = " << ceil_log2(std::max(_ports_in[i_in3].type_size, 8ull) / 8)
-          << ";\n ";
+      const auto cache_word_bitsize =
+          iface_attrs.find(FunctionArchitecture::iface_cache_word_size) != iface_attrs.end() ?
+              std::stoull(iface_attrs.find(FunctionArchitecture::iface_cache_word_size)->second) :
+              std::max(_ports_in[i_in3].type_size, 8ull);
+      const auto cache_data_bitsize = std::max(cache_word_bitsize, _ports_in[i_in3].type_size);
+      out << "localparam BITSIZE_cache_data=" << cache_data_bitsize << ",\n"
+          << "  BITSIZE_cache_data_size=BITSIZE_cache_data/8;\n\n"
+          << "// BITSIZE_log_cache_data_size = log2(BITSIZE_cache_data >> 3)\n"
+          << "localparam BITSIZE_log_cache_data_size = " << ceil_log2(cache_data_bitsize / 8) << ";\n ";
    }
 
    /* No cache, build the AXI controller */
@@ -333,16 +339,27 @@ void ReadWriteMAXIHDLGenerator::InternalExec(std::ostream& out, structural_objec
 #if HAVE_ASSERTS
       const auto out1_port = mod->find_member("out1", port_o_K, mod);
       THROW_ASSERT(out1_port, "out1 port must be present in " + mod->get_path());
-      const auto fe_data_w = STD_GET_SIZE(GetPointerS<port_o>(out1_port)->get_typeRef());
+      const auto fe_data_w =
+          std::max(iface_attrs.find(FunctionArchitecture::iface_cache_word_size) != iface_attrs.end() ?
+                       std::stoull(iface_attrs.find(FunctionArchitecture::iface_cache_word_size)->second) :
+                       8ull,
+                   STD_GET_SIZE(GetPointerS<port_o>(out1_port)->get_typeRef()));
+      THROW_ASSERT(fe_data_w <= std::stoull(be_data_w),
+                   "ERROR: Cache frontend word size (" + STR(fe_data_w) +
+                       " bits) cannot be larger than cache backend bus size (" + be_data_w + " bits)");
       THROW_ASSERT((1ULL << std::stoull(word_off_w)) * fe_data_w >= std::stoull(be_data_w),
                    "ERROR: Cache line of " + STR((1ULL << std::stoull(word_off_w)) * fe_data_w) +
                        " bits is smaller than bus size (" + STR(be_data_w) + ")");
 #endif
 
       ip_components = "IOB_cache_axi";
-      out << "wire [BITSIZE_address-1:BITSIZE_log_data_size] addr;\n"
-          << "wire [BITSIZE_data_size-1:0] wstrb;\n"
-          << "wire [BITSIZE_data-1:0] rdata;\n"
+      out << "wire [BITSIZE_address-1:BITSIZE_log_cache_data_size] addr;\n"
+          << "wire [BITSIZE_log_cache_data_size-1:0] byte_offset;\n"
+          << "wire [BITSIZE_cache_data_size-1:0] wstrb;\n"
+          << "wire [BITSIZE_cache_data-1:0] wdata;\n"
+          << "wire [BITSIZE_cache_data-1:0] rdata;\n"
+          << "wire [BITSIZE_data-1:0] shifted_rdata;\n"
+          << "wire [BITSIZE_data-1:0] read_mask;\n"
           << "wire ready;\n"
           << "wire dirty;\n"
           << "wire reset_cache;\n"
@@ -366,9 +383,14 @@ void ReadWriteMAXIHDLGenerator::InternalExec(std::ostream& out, structural_objec
           << "assign " << _ports_out[o_awuser].name << " = 0;\n"
           << "assign " << _ports_out[o_awregion].name << " = 0;\n\n"
           << "assign done_port = state == S_IDLE? ready : !dirty;\n"
-          << "assign addr = " << _ports_in[i_in4].name << "[BITSIZE_address-1:BITSIZE_log_data_size];\n"
-          << "assign wstrb = " << _ports_in[i_in1].name << " ? (1 << (" << _ports_in[i_in2].name << "/8)) - 1 : 0;\n"
-          << "assign " << _ports_out[o_out1].name << " = done_port ? rdata : 0;\n\n"
+          << "assign addr = " << _ports_in[i_in4].name << "[BITSIZE_address-1:BITSIZE_log_cache_data_size];\n"
+          << "assign byte_offset = " << _ports_in[i_in4].name << "[BITSIZE_log_cache_data_size-1:0];\n"
+          << "assign wdata = " << _ports_in[i_in3].name << " << (byte_offset * 8);\n"
+          << "assign wstrb = " << _ports_in[i_in1].name << " ? (((1 << (" << _ports_in[i_in2].name
+          << "/8)) - 1) << byte_offset) : 0;\n"
+          << "assign shifted_rdata = rdata >> (byte_offset * 8);\n"
+          << "assign read_mask = {BITSIZE_data{1'b1}} >> (BITSIZE_data - " << _ports_in[i_in2].name << ");\n"
+          << "assign " << _ports_out[o_out1].name << " = done_port ? (shifted_rdata & read_mask) : 0;\n\n"
           << "always @(*) begin\n"
           << "  state_next = state;\n"
           << "  if(state == S_IDLE) begin\n"
@@ -402,10 +424,10 @@ void ReadWriteMAXIHDLGenerator::InternalExec(std::ostream& out, structural_objec
           << "  .CTRL_CACHE(1),\n"
           << "  .CTRL_CNT(1),\n"
           << "  .BURST_TYPE(" << axi_burst_type << "),\n"
-          << "  .BITSIZE_addr(BITSIZE_address-BITSIZE_log_data_size),\n"
-          << "  .BITSIZE_wdata(BITSIZE_data),\n"
-          << "  .BITSIZE_wstrb(BITSIZE_data_size),\n"
-          << "  .BITSIZE_rdata(BITSIZE_data),\n"
+          << "  .BITSIZE_addr(BITSIZE_address-BITSIZE_log_cache_data_size),\n"
+          << "  .BITSIZE_wdata(BITSIZE_cache_data),\n"
+          << "  .BITSIZE_wstrb(BITSIZE_cache_data_size),\n"
+          << "  .BITSIZE_rdata(BITSIZE_cache_data),\n"
           << "  .BITSIZE_m_axi_awid(BITSIZE_awid),\n"
           << "  .BITSIZE_m_axi_awaddr(BITSIZE_address),\n"
           << "  .BITSIZE_m_axi_awlen(BITSIZE_awlen),\n"
@@ -417,7 +439,7 @@ void ReadWriteMAXIHDLGenerator::InternalExec(std::ostream& out, structural_objec
           << "  .BITSIZE_m_axi_arlen(BITSIZE_arlen),\n"
           << "  .BITSIZE_m_axi_rid(BITSIZE_rid),\n"
           << "  .BITSIZE_m_axi_rdata(" << be_data_w << ")) cache(.addr(addr),\n"
-          << "  .wdata(" << _ports_in[i_in3].name << "),\n"
+          << "  .wdata(wdata),\n"
           << "  .wstrb(wstrb),\n"
           << "  .rdata(rdata),\n"
           << "  .ready(ready),\n"
