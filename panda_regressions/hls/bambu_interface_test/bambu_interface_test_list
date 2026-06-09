@@ -107,6 +107,9 @@ axi_different_write.c --top-fname=vector_copy_plus --generate-tb=BENCHMARKS_ROOT
 axi_different_write.c --top-fname=vector_copy_plus --generate-tb=BENCHMARKS_ROOT/axi_different_write.c -DBIG_BUS --benchmark-name=axi_different_write_64 -m64
 axi_different_write.c --top-fname=vector_copy_plus --generate-tb=BENCHMARKS_ROOT/axi_different_write.c --benchmark-name=axi_different_write_delayed --memory-allocation-policy=GLSS --mem-delay-read=20 --mem-delay-write=20
 axi_wb_single_line.cpp --top-fname=kernel --generate-interface=INFER --generate-tb=BENCHMARKS_ROOT/axi_wb_single_line.cpp --benchmark-name=axi_wb_single_line
+axi_misaligned_struct_cache.cpp --top-fname=misaligned_struct_axi --generate-tb=BENCHMARKS_ROOT/axi_misaligned_struct_cache.cpp --benchmark-name=axi_misaligned_struct_cache
+axi_mixed_arrays_cache.cpp --top-fname=mixed_arrays_axi --generate-tb=BENCHMARKS_ROOT/axi_mixed_arrays_cache.cpp --benchmark-name=axi_mixed_arrays
+axi_mixed_arrays_cache.cpp --top-fname=mixed_arrays_axi --generate-tb=BENCHMARKS_ROOT/axi_mixed_arrays_cache.cpp -DUSE_CACHE --benchmark-name=axi_mixed_arrays_cache
 BENCHMARK_ENV=MANTIS_EXPECT_FAILURE=1,MANTIS_EXPECT_FAILURE_REGEX=unknown.interface.bundle axi_cache_unknown_bundle.c --top-fname=kernel --generate-tb=x="{1}" --benchmark-name=axi_cache_unknown_bundle_expected_failure
 2mm.c --top-fname=mmult --generate-tb=BENCHMARKS_ROOT/2mm.c -DBIG_BUFFER --benchmark-name=2mm_cache_big_buffer
 2mm.c --top-fname=mmult --generate-tb=BENCHMARKS_ROOT/2mm.c -DBIG_BUS --benchmark-name=2mm_cache_big_bus
