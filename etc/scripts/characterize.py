@@ -226,6 +226,10 @@ def main():
     if args.restart:
         mantis_cmd.append("--restart")
     mantis_cmd.extend(mantis_args)
+    # Resumable per-module escalation-ladder checkpoints live under the output dir
+    # (overridable). launch.sh reads BAMBU_CHAR_LADDER_STATE_DIR to resume a module
+    # from the CORE_UTILIZATION rung it stopped on instead of restarting at the top.
+    os.environ.setdefault("BAMBU_CHAR_LADDER_STATE_DIR", os.path.join(out_path, ".ladder_state"))
     logging.info("Prepared mantis command: " + " ".join(shlex.quote(c) for c in mantis_cmd))
 
     try:    

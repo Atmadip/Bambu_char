@@ -240,6 +240,10 @@ create_custom_orfs_synth_script()
    local source_synth_script="$1"
    local destination_synth_script="$2"
 
+   # Exit status:
+   #   0 -> a known retime block was rewritten into the per-module form (custom script written)
+   #   2 -> no known retime block found (caller should skip the SYNTH_SCRIPT override and
+   #        rely on the ORFS-native SYNTH_RETIME_MODULES handling)
    python3 - "${source_synth_script}" "${destination_synth_script}" <<'PY'
 import pathlib
 import sys
@@ -251,13 +255,32 @@ if not source.is_file():
    raise SystemExit(f"ERROR: ORFS synth.tcl not found: {source}")
 
 text = source.read_text(encoding="utf-8")
-old = """if { [env_var_exists_and_non_empty SYNTH_RETIME_MODULES] } {\n  select $::env(SYNTH_RETIME_MODULES)\n  opt -fast -full\n  memory_map\n  opt -full\n  techmap\n  abc -dff -script $::env(SCRIPTS_DIR)/abc_retime.script\n  select -clear\n}\n"""
-new = """if { [env_var_exists_and_non_empty SYNTH_RETIME_MODULES] } {\n  foreach module $::env(SYNTH_RETIME_MODULES) {\n    select -module $module\n    opt -fast -full\n    memory_map\n    opt -full\n    techmap\n    abc -dff -script $::env(SCRIPTS_DIR)/abc_retime.script\n    select -clear\n  }\n}\n"""
-if old not in text:
-   raise SystemExit("ERROR: ORFS synth.tcl retime block not found while preparing custom synth script.")
 
-destination.parent.mkdir(parents=True, exist_ok=True)
-destination.write_text(text.replace(old, new, 1), encoding="utf-8")
+# Per-module retiming (bambu intent): retime each selected module independently.
+new = """if { [env_var_exists_and_non_empty SYNTH_RETIME_MODULES] } {\n  foreach module $::env(SYNTH_RETIME_MODULES) {\n    select -module $module\n    opt -fast -full\n    memory_map\n    opt -full\n    techmap\n    abc -dff -script $::env(SCRIPTS_DIR)/abc_retime.script\n    select -clear\n  }\n}\n"""
+
+# Known upstream retime blocks across ORFS revisions:
+#   - newer ORFS: list-expanding "select {*}$::env(...)"
+#   - older ORFS (bambu pinned digest): single-arg "select $::env(...)"
+candidates = [
+   """if { [env_var_exists_and_non_empty SYNTH_RETIME_MODULES] } {\n  select {*}$::env(SYNTH_RETIME_MODULES)\n  opt -fast -full\n  memory_map\n  opt -full\n  techmap\n  abc -dff -script $::env(SCRIPTS_DIR)/abc_retime.script\n  select -clear\n}\n""",
+   """if { [env_var_exists_and_non_empty SYNTH_RETIME_MODULES] } {\n  select $::env(SYNTH_RETIME_MODULES)\n  opt -fast -full\n  memory_map\n  opt -full\n  techmap\n  abc -dff -script $::env(SCRIPTS_DIR)/abc_retime.script\n  select -clear\n}\n""",
+]
+
+if new in text:
+   # synth.tcl already performs per-module retiming; no override needed.
+   raise SystemExit(2)
+
+for old in candidates:
+   if old in text:
+      destination.parent.mkdir(parents=True, exist_ok=True)
+      destination.write_text(text.replace(old, new, 1), encoding="utf-8")
+      raise SystemExit(0)
+
+# Unknown synth.tcl layout: do not abort the flow; fall back to native handling.
+sys.stderr.write("WARNING: ORFS synth.tcl retime block not recognized; "
+                 "skipping custom synth script.\n")
+raise SystemExit(2)
 PY
 }
 
@@ -560,8 +583,11 @@ EOF
          docker run --rm "${docker_image}" \
             bash -lc 'cat /OpenROAD-flow-scripts/flow/scripts/synth.tcl' > "${source_synth_script_host}"
       fi
-      create_custom_orfs_synth_script "${source_synth_script_host}" "${custom_synth_script_host}"
-      orfs_extra_env_vars+=("SYNTH_SCRIPT=${custom_synth_script}")
+      if create_custom_orfs_synth_script "${source_synth_script_host}" "${custom_synth_script_host}"; then
+         orfs_extra_env_vars+=("SYNTH_SCRIPT=${custom_synth_script}")
+      else
+         echo "INFO: using native ORFS SYNTH_RETIME_MODULES handling (no custom synth script)." >&2
+      fi
    fi
 
    run_orfs_make_cmd
@@ -570,7 +596,7 @@ EOF
    local metadata_json="${WORK_DIR}/reports/${PLATFORM}/${DESIGN_NAME}/${FLOW_VARIANT}/metadata.json"
    local results_sdc="${WORK_DIR}/results/${PLATFORM}/${DESIGN_NAME}/${FLOW_VARIANT}/2_floorplan.sdc"
    local out_xml="${SWD}/$(bambu_results /application/backend@bambu_results)"
-   python3 - "${metadata_json}" "${results_sdc}" "${out_xml}" <<'PY'
+   python3 - "${metadata_json}" "${results_sdc}" "${out_xml}" "${clock_constraint_ps}" <<'PY'
 import json
 import pathlib
 import re
@@ -629,6 +655,7 @@ def requirement_from_sdc(sdc_path):
 metadata_path = pathlib.Path(sys.argv[1])
 sdc_path = pathlib.Path(sys.argv[2])
 out_xml = pathlib.Path(sys.argv[3])
+clock_period_ps = as_float(sys.argv[4]) if len(sys.argv) > 4 else None
 if not metadata_path.is_file():
    print(f"ERROR: metadata file not found: {metadata_path}", file=sys.stderr)
    sys.exit(1)
@@ -637,15 +664,48 @@ data = json.loads(metadata_path.read_text(encoding="utf-8"))
 design_area = first_numeric(data, ["finish__design__instance__area", "finish__design__instance__area__stdcell"])
 tot_power = first_numeric(data, ["finish__power__total", "finish__power__internal__total"])
 setup_ws = first_numeric(data, ["finish__timing__setup__ws", "finish__timing__setup__wns"])
-timing_requirement = period_from_metadata(data) or requirement_from_sdc(sdc_path)
-if design_area is None or tot_power is None or setup_ws is None or timing_requirement is None:
+fmax_hz = first_numeric(data, ["finish__timing__fmax", "placeopt__timing__fmax",
+                               "globalroute__timing__fmax", "detailedplace__timing__fmax",
+                               "cts__timing__fmax"])
+
+# Required clock period in ns. Prefer bambu's intended value (period_ps): the SDC/metadata
+# value follows the platform Liberty time unit (ns for nangate45, ps for others) and is not
+# portable across platforms.
+required_ns = None
+if clock_period_ps is not None and clock_period_ps > 0:
+   required_ns = clock_period_ps / 1000.0
+else:
+   required_ns = period_from_metadata(data)
+   if required_ns is None:
+      required_ns = requirement_from_sdc(sdc_path)
+
+# OpenROAD reports an "infinite slack" sentinel (>= ~1e30) when no constrained worst path
+# exists, which makes the slack-based delay math (required - ws) meaningless. fmax (Hz) is
+# always reported and authoritative, so derive timing from it; fall back to the slack-based
+# computation only when fmax is unavailable.
+SENTINEL = 1.0e30
+design_delay_ns = None
+frequency_mhz = None
+clock_slack_ns = None
+if fmax_hz is not None and fmax_hz > 0:
+   design_delay_ns = 1.0e9 / fmax_hz            # min achievable clock period [ns]
+   frequency_mhz = fmax_hz / 1.0e6
+   if required_ns is not None:
+      clock_slack_ns = required_ns - design_delay_ns
+   elif setup_ws is not None and abs(setup_ws) < SENTINEL:
+      clock_slack_ns = setup_ws
+   else:
+      clock_slack_ns = 0.0
+elif setup_ws is not None and abs(setup_ws) < SENTINEL and required_ns is not None:
+   design_delay_ns = required_ns - setup_ws
+   clock_slack_ns = setup_ws
+   frequency_mhz = 1000.0 / design_delay_ns if design_delay_ns else 0.0
+
+if (design_area is None or tot_power is None or design_delay_ns is None
+      or clock_slack_ns is None or frequency_mhz is None):
    print("ERROR: missing ORFS metrics for backend XML generation", file=sys.stderr)
    sys.exit(1)
 
-design_delay_ps = timing_requirement - setup_ws
-design_delay_ns = design_delay_ps / 1000.0
-clock_slack_ns = setup_ws / 1000.0
-frequency_mhz = 1000.0 / design_delay_ns if design_delay_ns else 0.0
 out_xml.parent.mkdir(parents=True, exist_ok=True)
 root = ET.Element("application")
 ET.SubElement(root, "resources",
