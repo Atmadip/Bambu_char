@@ -38,3 +38,6 @@
 [submodule "abseil-cpp"]
 	path = ext/abseil/abseil-cpp
 	url = https://github.com/abseil/abseil-cpp.git
+[submodule "external/OpenROAD-flow-scripts"]
+	path = external/OpenROAD-flow-scripts
+	url = https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts.git
