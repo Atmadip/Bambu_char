@@ -469,6 +469,8 @@ run_orfs_backend()
    pdk_corner_env()      { :; }                  # echo "CORNER=<x>" lines to forward to ORFS
    pdk_config_mk_extra() { :; }                  # rewrite/append config.mk lines; $1 = config.mk
    pdk_run_flow()        { run_orfs_make_cmd; }   # run the ORFS flow; default = single attempt
+   pdk_write_sdc()       { echo "ERROR: PDK plugin for ${TECHNODE} must define pdk_write_sdc()" >&2; exit 1; }
+   pdk_extract_metrics() { echo "ERROR: PDK plugin for ${TECHNODE} must define pdk_extract_metrics()" >&2; exit 1; }
 
    local pdk_plugin="${SWD}/${TECHNODE}_char.sh"
    if [[ -f "${pdk_plugin}" ]]; then
@@ -478,6 +480,11 @@ run_orfs_backend()
    else
       echo "[char] technode=${TECHNODE} corner=${CHAR_CORNER:-none} (no PDK plugin; base flow)"
    fi
+
+   # SDC is PDK-owned: the clock period must be in the platform Liberty time
+   # unit (ps for asap7, ns for nangate45/sky130hd). Plugin defines pdk_write_sdc.
+   export SDC_FILE="${SWD}/constraints.sdc"
+   pdk_write_sdc "${SDC_FILE}"
 
    WORK_DIR_CONTAINER="${OPENROAD_DOCKER_WORK_DIR_CONTAINER:-/work}"
    if [[ "${WORK_DIR_CONTAINER}" == "/" ]]; then
@@ -800,154 +807,15 @@ EOF
    run_orfs_make_cmd metadata-generate
 
    local metadata_json="${WORK_DIR}/reports/${PLATFORM}/${DESIGN_NAME}/${FLOW_VARIANT}/metadata.json"
-   local results_sdc="${WORK_DIR}/results/${PLATFORM}/${DESIGN_NAME}/${FLOW_VARIANT}/2_floorplan.sdc"
    local out_xml="${SWD}/$(bambu_results /application/backend@bambu_results)"
-   python3 - "${metadata_json}" "${results_sdc}" "${out_xml}" "${clock_constraint_ps}" <<'PY'
-import json
-import pathlib
-import re
-import sys
-import xml.etree.ElementTree as ET
-
-def as_float(value):
-   if isinstance(value, (int, float)):
-      return float(value)
-   if isinstance(value, str):
-      m = re.search(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", value.strip())
-      if m:
-         try:
-            return float(m.group(0))
-         except ValueError:
-            return None
-   return None
-
-def first_numeric(data, keys):
-   for key in keys:
-      if key in data:
-         val = as_float(data[key])
-         if val is not None:
-            return val
-   return None
-
-def period_from_metadata(data):
-   clocks = data.get("constraints__clocks__details")
-   if not isinstance(clocks, list):
-      return None
-   for clk in clocks:
-      if isinstance(clk, str):
-         m = re.search(r":\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)", clk)
-         if m:
-            return float(m.group(1))
-   return None
-
-def requirement_from_sdc(sdc_path):
-   try:
-      content = sdc_path.read_text(encoding="utf-8")
-   except OSError:
-      return None
-   m = re.search(r"create_clock[\s\S]*?-period\s+([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)", content)
-   if m:
-      return float(m.group(1))
-   normalized = re.sub(r"\\\s*\n", " ", content)
-   num_re = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
-   vals = []
-   for line in normalized.splitlines():
-      if "set_max_delay" in line:
-         numbers = re.findall(num_re, line)
-         if numbers:
-            vals.append(float(numbers[-1]))
-   return min(vals) if vals else None
-
-metadata_path = pathlib.Path(sys.argv[1])
-sdc_path = pathlib.Path(sys.argv[2])
-out_xml = pathlib.Path(sys.argv[3])
-clock_period_ps = as_float(sys.argv[4]) if len(sys.argv) > 4 else None
-if not metadata_path.is_file():
-   print(f"ERROR: metadata file not found: {metadata_path}", file=sys.stderr)
-   sys.exit(1)
-
-data = json.loads(metadata_path.read_text(encoding="utf-8"))
-design_area = first_numeric(data, ["finish__design__instance__area", "finish__design__instance__area__stdcell"])
-tot_power = first_numeric(data, ["finish__power__total", "finish__power__internal__total"])
-setup_ws = first_numeric(data, ["finish__timing__setup__ws", "finish__timing__setup__wns"])
-fmax_hz = first_numeric(data, ["finish__timing__fmax", "placeopt__timing__fmax",
-                               "globalroute__timing__fmax", "detailedplace__timing__fmax",
-                               "cts__timing__fmax"])
-
-# Required clock period in ns. Prefer bambu's intended value (period_ps): the SDC/metadata
-# value follows the platform Liberty time unit (ns for nangate45, ps for others) and is not
-# portable across platforms.
-required_ns = None
-if clock_period_ps is not None and clock_period_ps > 0:
-   required_ns = clock_period_ps / 1000.0
-else:
-   required_ns = period_from_metadata(data)
-   if required_ns is None:
-      required_ns = requirement_from_sdc(sdc_path)
-
-# OpenROAD reports an "infinite slack" sentinel (>= ~1e30) when no constrained worst path
-# exists, which makes the slack-based delay math (required - ws) meaningless. fmax (Hz) is
-# always reported and authoritative, so derive timing from it; fall back to the slack-based
-# computation only when fmax is unavailable.
-SENTINEL = 1.0e30
-design_delay_ns = None
-frequency_mhz = None
-clock_slack_ns = None
-if fmax_hz is not None and fmax_hz > 0:
-   design_delay_ns = 1.0e9 / fmax_hz            # min achievable clock period [ns]
-   frequency_mhz = fmax_hz / 1.0e6
-   if required_ns is not None:
-      clock_slack_ns = required_ns - design_delay_ns
-   elif setup_ws is not None and abs(setup_ws) < SENTINEL:
-      clock_slack_ns = setup_ws
-   else:
-      clock_slack_ns = 0.0
-elif setup_ws is not None and abs(setup_ws) < SENTINEL and required_ns is not None:
-   design_delay_ns = required_ns - setup_ws
-   clock_slack_ns = setup_ws
-   frequency_mhz = 1000.0 / design_delay_ns if design_delay_ns else 0.0
-
-if (design_area is None or tot_power is None or design_delay_ns is None
-      or clock_slack_ns is None or frequency_mhz is None):
-   print("ERROR: missing ORFS metrics for backend XML generation", file=sys.stderr)
-   sys.exit(1)
-
-out_xml.parent.mkdir(parents=True, exist_ok=True)
-root = ET.Element("application")
-ET.SubElement(root, "resources",
-              AREA=f"{design_area:g}",
-              BRAMS="0",
-              DRAMS="0",
-              CLOCK_SLACK=f"{clock_slack_ns:g}",
-              DSPS="0",
-              FREQUENCY=f"{frequency_mhz:g}",
-              PERIOD=f"{design_delay_ns:g}",
-              REGISTERS="0",
-              POWER=f"{tot_power:g}",
-              DELAY=f"{design_delay_ns:g}",
-              SLACK=f"{clock_slack_ns:g}")
-ET.ElementTree(root).write(out_xml, encoding="utf-8", xml_declaration=True)
-PY
+   # Delay/area read-back is PDK-owned: timing values follow the platform Liberty unit.
+   pdk_extract_metrics "${metadata_json}" "${out_xml}"
 }
 
 export DESIGN_NAME="$(bambu_results /application/top_module@name)"
 : "${DESIGN_NICKNAME:=${DESIGN_NAME}}"
 export DESIGN_NICKNAME
-export SDC_FILE="${SWD}/constraints.sdc"
-clock_constraint_ps="$(bambu_results /application/target@period_ps)"
-if [[ -z "${clock_constraint_ps}" ]]; then
-   clock_constraint_ps="$(bambu_results /application/target@period)"
-fi
-
-if $(bambu_results /application/top_module@combinational); then
-   echo "set_max_delay ${clock_constraint_ps} -from [all_inputs] -to [all_outputs]" > "${SDC_FILE}"
-else
-   echo "create_clock $(bambu_results /application/top_module@clock_name) -period ${clock_constraint_ps}" > "${SDC_FILE}"
-fi
-sdc_ext_file="$(bambu_results /application/target@sdc_ext_file)"
-if [[ -n "${sdc_ext_file}" ]]; then
-   echo "source ${sdc_ext_file}" >> "${SDC_FILE}"
-fi
+# (SDC + delay read-back moved into run_orfs_backend as PDK-owned hooks.)
 
 WORK_DIR="${CURR_WORKDIR:-$(pwd)}"
 export VERILOG_FILES=""
