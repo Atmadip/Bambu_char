@@ -48,6 +48,8 @@
 #define INPUT_OPT_TARGET_DATAFILE (1 + INPUT_OPT_CHARACTERIZE)
 #define INPUT_OPT_TARGET_SCRIPTFILE (1 + INPUT_OPT_TARGET_DATAFILE)
 #define OPT_PARALLEL_BACKEND (1 + INPUT_OPT_TARGET_SCRIPTFILE)
+#define INPUT_OPT_GENERATE_LIST (1 + OPT_PARALLEL_BACKEND)
+#define INPUT_OPT_LIST_LIBRARY (1 + INPUT_OPT_GENERATE_LIST)
 
 #include "utility.hpp"
 #include "utility/fileIO.hpp"
@@ -85,6 +87,10 @@ void EucalyptusParameter::PrintHelp(std::ostream& os) const
          "the target device.\n"
       << "    --clock-period=value            Specify the period of the clock signal (default 10 nanoseconds)\n"
       << "    --characterize=<component_name> Characterize the given component\n"
+      << "    --generate-list                 List every characterizable component name "
+         "(<template>-<instance>) and exit; runs no backend\n"
+      << "    --list-library=<name>           With --generate-list, restrict the listing to a "
+         "single library (default: all)\n"
       << std::endl;
    os << "  Backend configuration:\n\n"
       << "   --parallel-backend[=N]\n"
@@ -119,6 +125,8 @@ int EucalyptusParameter::Exec()
                                          {"target-scriptfile", required_argument, nullptr, INPUT_OPT_TARGET_SCRIPTFILE},
                                          {"writer", required_argument, nullptr, 'w'},
                                          {"parallel-backend", required_argument, nullptr, OPT_PARALLEL_BACKEND},
+                                         {"generate-list", no_argument, nullptr, INPUT_OPT_GENERATE_LIST},
+                                         {"list-library", required_argument, nullptr, INPUT_OPT_LIST_LIBRARY},
                                          {nullptr, 0, nullptr, 0}};
 
    if(argc == 1) // Bambu called without arguments, it simple prints help message
@@ -134,6 +142,16 @@ int EucalyptusParameter::Exec()
          case INPUT_OPT_CHARACTERIZE:
          {
             setOption(OPT_component_name, optarg);
+            break;
+         }
+         case INPUT_OPT_GENERATE_LIST:
+         {
+            setOption("generate_list", true);
+            break;
+         }
+         case INPUT_OPT_LIST_LIBRARY:
+         {
+            setOption("list_library", std::string(optarg));
             break;
          }
          case INPUT_OPT_TARGET_DATAFILE:
@@ -267,6 +285,10 @@ void EucalyptusParameter::SetDefaults()
    setOption(OPT_clock_period_resource_fraction, 1.0);
 
    setOption(OPT_parallel_backend, "1");
+
+   /// list-only characterization (no backend)
+   setOption("generate_list", false);
+   setOption("list_library", "");
 
    /// backend HDL
    setOption(OPT_writer_language, HDLWriter_Language::VERILOG);

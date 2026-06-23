@@ -42,6 +42,8 @@
  */
 #include "RTL_characterization.hpp"
 
+#include <iostream>
+
 #include "BackendWrapper.hpp"
 #include "HDL_manager.hpp"
 #include "NP_functionality.hpp"
@@ -93,11 +95,36 @@ std::string RTLCharacterization::GetName() const
 void RTLCharacterization::Initialize()
 {
    FunctionalUnitStep::Initialize();
+   if(parameters->getOption<bool>("generate_list"))
+   {
+      return; // list mode: no single component/library; Exec() iterates libraries
+   }
    LM = TM->get_library_manager(TM->get_library(component));
 }
 
 DesignFlowStep_Status RTLCharacterization::Exec()
 {
+   if(parameters->getOption<bool>("generate_list"))
+   {
+      const auto only_lib = parameters->getOption<std::string>("list_library"); // "" = all
+      for(const auto& lib_name : TM->get_library_list())
+      {
+         if(!only_lib.empty() && lib_name != only_lib)
+         {
+            continue;
+         }
+         LM = TM->get_library_manager(lib_name);
+         if(!LM)
+         {
+            continue;
+         }
+         for(const auto& fu_pair : LM->get_library_fu())
+         {
+            AnalyzeFu(fu_pair.second);
+         }
+      }
+      return DesignFlowStep_Status::SUCCESS;
+   }
    const auto functional_unit = LM->get_fu(component);
    AnalyzeFu(functional_unit);
    // fix_execution_time_std();
@@ -806,6 +833,12 @@ void RTLCharacterization::AnalyzeCell(functional_unit* fu, const unsigned int pr
 {
    const auto fu_name = fu->get_name();
    const auto fu_base_name = fu->fu_template_name != "" ? fu->fu_template_name : fu_name;
+   if(parameters->getOption<bool>("generate_list"))
+   {
+      // <template>-<instance>, matching characterize.py's benchmark-name format.
+      std::cout << "FU_LIST " << fu_base_name << "-" << fu_name << "\n";
+      return;
+   }
    if(cells.find(fu_name) != cells.end())
    {
       size_t n_portsize_parameters = portsize_parameters.size();

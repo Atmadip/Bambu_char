@@ -99,8 +99,43 @@ parallelism with `-j`. (Make sure `eucalyptus` is on `PATH` — see Step 1.)
 | `--restart` | Resume from where a previous run stopped. First run must omit it (and the output dir must not already exist). |
 | `-t <time>` | Per-module timeout (default `75m`). |
 | `--update=<c1,c2,...>` | Characterize only the named components instead of the full set. |
-| `--list-only=<file>` | Only generate the work list, then exit. |
+| `--list-only=<file>` | Only generate the work list, then exit. **Note:** this is the Python enumerator and mis-names non-scalar FUs — prefer `eucalyptus --generate-list` (below). |
 | `--from-list=<file>` | Run from a previously generated work list. |
+
+### Generate the module list with `eucalyptus --generate-list`
+
+`characterize.py`'s `--list-only` enumerates names in Python and **mis-names
+non-scalar FUs** (vectors, `MUX2_GATE`, floating-point): it ignores each FU's
+`portsize_parameters` and port structure, so it emits names like
+`vec_mul_node_FU_1_1_1` or `MUX2_GATE_0_1_1` that fail characterization with
+*"<name> is not in any technology library."*
+
+Use **`eucalyptus --generate-list`** instead. It runs bambu's own C++ enumerator
+(`FunctionalUnitStep::AnalyzeFu` — the same code the characterizer uses), so
+every emitted name is guaranteed buildable (correct lane-pair vectors, the MUX
+`sel` port, FP only at 32/64, etc.). It prints one `FU_LIST <template>-<instance>`
+line per component and runs **no backend**:
+
+```bash
+source <install-prefix>/settings.sh   # eucalyptus needs BAMBU_HLS in the env
+eucalyptus --target-datafile=etc/libtech/asic/sky130hd-seed.xml --generate-list \
+    2>/dev/null | sed -n 's/^FU_LIST //p' | sort -u > names.txt
+```
+
+The list is device-independent (any `*-seed.xml` yields the same names), so pass
+whichever seed you will characterize against. Optional `--list-library=<name>`
+restricts the dump to a single library (default: all).
+
+Wrap the names into `--from-list` lines and run the backend as usual:
+
+```bash
+SEED=etc/libtech/asic/sky130hd-seed.xml
+eucalyptus --target-datafile="$SEED" --generate-list 2>/dev/null \
+  | sed -n 's/^FU_LIST //p' | sort -u \
+  | awk -v s="$SEED" '{print "--target-datafile="s" --characterize="$0" --benchmark-name="$0" --configuration-name=sky130hd"}' \
+  > from_list.txt
+python3 etc/scripts/characterize.py --from-list from_list.txt -o char_sky130hd -j 8
+```
 
 **Outputs:**
 
@@ -118,3 +153,10 @@ the process corner (BC/TC/WC → ORFS `CORNER`), and runs a resumable
 congestion and stops (resumably) on any other error. Per-PDK policy and ladder
 bounds live in the plugins sourced by `launch.sh`:
 `etc/libtech/backend/openroad/flowC/{asap7,nangate45,sky130hd}_char.sh`.
+
+The ladder's **starting utilization** can be overridden per-run with the
+`LADDER_START_UTIL` environment variable — it filters the ladder to rungs `<=`
+the given value, so the run begins at that utilization and steps down from there.
+This is handy for re-running known-hard modules whose winning utilization band is
+already known (e.g. `LADDER_START_UTIL=35` for 64-bit dividers), without changing
+the plugin's default ladder.

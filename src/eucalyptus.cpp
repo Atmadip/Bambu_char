@@ -170,7 +170,15 @@ int main(int argc, char* argv[])
                   ->CreateTechnologyFlowStep(TechnologyFlowStep_Type::LOAD_TECHNOLOGY);
       design_flow_manager.AddStep(technology_design_flow_step);
 
-      if(parameters->isOption(OPT_component_name))
+      if(parameters->getOption<bool>("generate_list"))
+      {
+         // List-only mode: enumerate all characterizable component names, no backend.
+         // The dummy "LIST-LIST" satisfies ComputeComponent(); it is never used in list mode.
+         const DesignFlowStepRef design_flow_step(
+             new RTLCharacterization(device, "LIST-LIST", design_flow_manager, parameters));
+         design_flow_manager.AddStep(design_flow_step);
+      }
+      else if(parameters->isOption(OPT_component_name))
       {
          const DesignFlowStepRef design_flow_step(new RTLCharacterization(
              device, parameters->getOption<std::string>(OPT_component_name), design_flow_manager, parameters));

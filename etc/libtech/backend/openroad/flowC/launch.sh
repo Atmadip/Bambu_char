@@ -379,7 +379,12 @@ if entry is None:
     entry.set("corner", corner)
     entry.set("name", name)
 entry.set("core_utilization", util)
+# Human-readable lookup table: stable order, one <module> per line.
+root[:] = sorted(root, key=lambda m: ((m.get("platform") or ""), (m.get("corner") or ""), (m.get("name") or "")))
+ET.indent(root, space="  ")
 ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+with open(path, "a", encoding="utf-8") as fh:
+    fh.write("\n")
 PY
    ) 9>"${xml}.lock"
 }
@@ -414,6 +419,20 @@ ladder_config_common()
 run_core_util_ladder()
 {
    local -a rungs=("$@")
+   # Optional override (env): start the ladder at the first rung <= LADDER_START_UTIL,
+   # skipping higher rungs. Scopes a per-run starting utilization without changing the
+   # plugin's default ladder. Useful for re-running known-hard modules whose winning
+   # utilization band is already known.
+   if [[ -n "${LADDER_START_UTIL:-}" ]]; then
+      local -a _filtered=() _r
+      for _r in "${rungs[@]}"; do
+         [[ "$_r" -le "${LADDER_START_UTIL}" ]] && _filtered+=("$_r")
+      done
+      if [[ ${#_filtered[@]} -gt 0 ]]; then
+         rungs=("${_filtered[@]}")
+         echo "[char] LADDER_START_UTIL=${LADDER_START_UTIL} -> ladder starts at CORE_UTILIZATION=${rungs[0]}"
+      fi
+   fi
    local floor="${rungs[$((${#rungs[@]}-1))]}"
    local state resume_at="" started=0 util
    state="$(ladder_state_file)"
@@ -430,7 +449,7 @@ run_core_util_ladder()
       echo "[char] CORE_UTILIZATION=${util} (platform=${PLATFORM} corner=${CHAR_CORNER:-none} design=${DESIGN_NAME})"
       if run_orfs_make_cmd; then
          rm -f "$state"
-         record_successful_util "$util"
+         LADDER_WON_UTIL="$util"   # recorded later, ONLY if the full flow (metadata+extract) succeeds
          return 0
       fi
       if ladder_flow_congested; then
@@ -593,6 +612,7 @@ export VERILOG_FILES          = ${config_verilog_files}
 export SDC_FILE               = ${config_sdc_file}
 export SKIP_LAST_GASP ?= ${SKIP_LAST_GASP:-1}
 export SYNTH_MEMORY_MAX_BITS = ${SYNTH_MEMORY_MAX_BITS:-4194304}
+export LEC_CHECK              = 0
 EOF
    if [[ "${use_fixed_floorplan}" -eq 1 ]]; then
       echo "export DIE_AREA               = ${DIE_AREA}" >> "${config_mk}"
@@ -804,12 +824,22 @@ EOF
       echo "ERROR: characterization backend flow failed for ${DESIGN_NAME} (platform=${PLATFORM} corner=${CHAR_CORNER:-none})." >&2
       exit 1
    fi
-   run_orfs_make_cmd metadata-generate
+   if ! run_orfs_make_cmd metadata-generate; then
+      echo "ERROR: metadata generation failed for ${DESIGN_NAME} (platform=${PLATFORM} corner=${CHAR_CORNER:-none})." >&2
+      exit 1
+   fi
 
    local metadata_json="${WORK_DIR}/reports/${PLATFORM}/${DESIGN_NAME}/${FLOW_VARIANT}/metadata.json"
    local out_xml="${SWD}/$(bambu_results /application/backend@bambu_results)"
    # Delay/area read-back is PDK-owned: timing values follow the platform Liberty unit.
-   pdk_extract_metrics "${metadata_json}" "${out_xml}"
+   if ! pdk_extract_metrics "${metadata_json}" "${out_xml}"; then
+      echo "ERROR: metric extraction failed for ${DESIGN_NAME} (platform=${PLATFORM} corner=${CHAR_CORNER:-none})." >&2
+      exit 1
+   fi
+
+   # Full success (P&R ladder + metadata + extraction). Only NOW record the winning
+   # CORE_UTILIZATION into the lookup table, so failed modules never get cached.
+   [[ -n "${LADDER_WON_UTIL:-}" ]] && record_successful_util "${LADDER_WON_UTIL}"
 }
 
 export DESIGN_NAME="$(bambu_results /application/top_module@name)"
