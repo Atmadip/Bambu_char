@@ -13,15 +13,38 @@
 pdk_corner_env() { :; }
 
 # --- config.mk policy -----------------------------------------------------
-# Keep it simple: use sky130hd's own config.mk defaults (PLACE_DENSITY, addon,
-# margins, PDN, etc.). The only knob we drive is CORE_UTILIZATION, via the
-# ladder below. So there is nothing extra to inject here.
-pdk_config_mk_extra() { :; }
+# By default use sky130hd's own config.mk defaults; CORE_UTILIZATION is the only
+# knob, driven by the ladder below.
+#
+# Optional fixed-die override (env CHAR_FIXED_DIE_UM=<um>): set an absolute
+# DIE_AREA/CORE_AREA so ORFS sizes the die by coordinates instead of utilization.
+# Needed for very small (e.g. 1-bit) cells whose util-driven die is too narrow
+# for the PDN strap grid (needs ~29um core width); lowering util cannot help once
+# the die hits its minimum size. Unset = unchanged (util ladder owns sizing).
+pdk_config_mk_extra() {
+   local cfg="$1"
+   if [[ -n "${CHAR_FIXED_DIE_UM:-}" ]]; then
+      local die="${CHAR_FIXED_DIE_UM}" m=4 hi
+      hi=$(( die - m ))
+      config_set_var "$cfg" DIE_AREA  "0 0 ${die} ${die}"
+      config_set_var "$cfg" CORE_AREA "${m} ${m} ${hi} ${hi}"
+      # DIE_AREA/CORE_AREA and CORE_UTILIZATION are mutually exclusive in ORFS
+      # floorplan init -> strip any CORE_UTILIZATION (e.g. from the device seed).
+      sed -i -E '/^[[:space:]]*export[[:space:]]+CORE_UTILIZATION[[:space:]]*=/d' "$cfg"
+      echo "[char] CHAR_FIXED_DIE_UM=${die} -> DIE_AREA=0 0 ${die} ${die}, CORE_AREA=${m} ${m} ${hi} ${hi} (fixed die; ladder bypassed; CORE_UTILIZATION stripped)"
+   fi
+}
 
 # --- escalation ladder ----------------------------------------------------
-# CORE_UTILIZATION 70 -> 10 (step -5).
+# CORE_UTILIZATION 70 -> 2 (step -5, plus low 5/2 rungs for tiny cells).
+# With CHAR_FIXED_DIE_UM set, the die is fixed by coordinates -> skip the ladder
+# and run the flow once.
 pdk_run_flow() {
-   run_core_util_ladder 70 65 60 55 50 45 40 35 30 25 20 15 10
+   if [[ -n "${CHAR_FIXED_DIE_UM:-}" ]]; then
+      run_orfs_make_cmd
+      return $?
+   fi
+   run_core_util_ladder 70 65 60 55 50 45 40 35 30 25 20 15 10 5 2
 }
 
 # --- SDC (constraints.sdc) ------------------------------------------------
